@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>php2shell-check: is my PHP patched?</title>
+<meta name="description" content="Paste output from your own server and get a verdict on PHP2Shell (CVE-2026-109618 / CVE-2026-109619). Runs entirely in your browser.">
+<style>
+:root {
+  --bg: #f7f7f5; --fg: #1d1f21; --muted: #5d6368; --card: #ffffff; --line: #d9dbdd;
+  --code-bg: #f0f1f2; --accent: #0b5cad;
+  --ok: #0f6b2f; --ok-bg: #e3f4e8; --bad: #a3141e; --bad-bg: #fce8ea; --warn: #8a5300; --warn-bg: #fdf1d9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121416; --fg: #e6e8ea; --muted: #9aa1a8; --card: #1b1e21; --line: #31363b;
+    --code-bg: #101214; --accent: #6db3ff;
+    --ok: #6fdc8c; --ok-bg: #12301c; --bad: #ff8d95; --bad-bg: #3a1519; --warn: #f5c36a; --warn-bg: #362a0f;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 52rem; margin: 0 auto; padding: 1rem 16px 4rem; }
+h1 { font-size: 1.6rem; margin: 1.2rem 0 .3rem; }
+h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; }
+p { margin: .5rem 0; }
+a { color: var(--accent); }
+.lead { color: var(--muted); margin-top: 0; }
+.banner { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--card);
+  padding: .7rem .9rem; border-radius: 6px; margin: 1rem 0; }
+.banner strong { display: block; }
+.why { background: var(--warn-bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: .7rem .9rem; }
+code, pre, textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: .7rem; overflow: auto;
+  margin: .4rem 0; white-space: pre; max-height: 18rem; }
+code { background: var(--code-bg); padding: .1rem .3rem; border-radius: 4px; }
+pre code { background: none; padding: 0; }
+button { font: inherit; font-size: .9rem; padding: .35rem .8rem; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--card); color: var(--fg); cursor: pointer; min-height: 2.2rem; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+textarea { width: 100%; min-height: 12rem; padding: .6rem; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--card); color: var(--fg); resize: vertical; }
+.row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .5rem 0; }
+.row .grow { flex: 1; }
+details { margin: .5rem 0; }
+summary { cursor: pointer; color: var(--accent); }
+.mode { display: inline-block; font-size: .8rem; padding: .1rem .5rem; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); }
+#overall { margin-top: 1.2rem; padding: .8rem 1rem; border-radius: 8px; font-weight: 600; border: 1px solid var(--line); }
+.card { border: 1px solid var(--line); border-left-width: 5px; background: var(--card); border-radius: 6px;
+  padding: .7rem .9rem; margin: .7rem 0; }
+.card h3 { margin: 0 0 .3rem; font-size: .95rem; word-break: break-all; font-weight: 600; }
+.badge { display: inline-block; font-size: .75rem; font-weight: 700; letter-spacing: .03em; padding: .1rem .5rem;
+  border-radius: 4px; margin-right: .5rem; vertical-align: middle; }
+.PATCHED { border-left-color: var(--ok); } .PATCHED .badge, #overall.PATCHED { background: var(--ok-bg); color: var(--ok); }
+.VULNERABLE { border-left-color: var(--bad); } .VULNERABLE .badge, #overall.VULNERABLE { background: var(--bad-bg); color: var(--bad); }
+.REVIEW { border-left-color: var(--warn); } .REVIEW .badge, #overall.REVIEW { background: var(--warn-bg); color: var(--warn); }
+#overall.NONE { background: var(--card); }
+.meta { color: var(--muted); font-size: .85rem; }
+.note { color: var(--muted); font-size: .9rem; border-left: 3px solid var(--line); padding-left: .6rem; margin: .4rem 0; }
+.fix { margin-top: .5rem; }
+.fixhead { display: flex; justify-content: space-between; align-items: center; font-size: .85rem; color: var(--muted); }
+footer { margin-top: 3rem; color: var(--muted); font-size: .9rem; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+<h1>Is my PHP patched against PHP2Shell?</h1>
+<p class="lead">CVE-2026-109618 and CVE-2026-109619 (CVSS v4.0 9.2, unauthenticated RCE). Paste output from <em>your own</em> server, get a verdict per finding.</p>
+
+<div class="banner">
+  <strong>Nothing leaves your browser, and this tool scans nothing.</strong>
+  This page makes no network requests (it ships a Content-Security-Policy that forbids them), has no backend, and never contacts any server.
+  It only reads text you paste. The commands below run on your machine, read-only.
+</div>
+
+<div class="why">
+  <strong>Why <code>php -v</code> is not enough.</strong>
+  Distros such as Ubuntu, AlmaLinux and CloudLinux backport the fix into the version number they already ship:
+  a patched Ubuntu 24.04 still prints <code>PHP 8.3.6</code>, and only the package version moves
+  (<code>8.3.6-0ubuntu0.24.04.12</code> &rarr; <code>…13</code>). The proof is in the package changelog.
+  Debian and Alpine ship upstream version numbers, so there the number is meaningful. This page handles both.
+</div>
+
+<h2>1. Run this on the server</h2>
+<p>One POSIX <code>sh</code> command. Read-only, no <code>sudo</code> needed (run it as root to also inspect other users' web workers). It lists PHP binaries and their versions (it runs <code>&lt;php&gt; -v</code>), the owning package and whether its changelog cites the fix, which web SAPIs are running, and whether any PHP process still maps files that were replaced on disk.</p>
+<div class="row"><button id="copy-collector" class="primary" type="button">Copy command</button><span id="copy-collector-msg" class="meta" aria-live="polite"></span></div>
+<pre id="collector"><code><!--COLLECTOR-START-->sh -c "$(cat &lt;&lt;'P2S'
+# php2shell-check collector (v1). POSIX sh, read-only, no sudo.
+# It reads package metadata and /proc, and runs `&lt;php&gt; -v` on PHP binaries
+# found in standard locations. It sends nothing anywhere.
+RE='^(php|php-fpm|php-cgi|lsphp|frankenphp)([0-9]+(\.[0-9]+)*)?$'
+CVE_RE='109618|109619|php2shell'
+T=''; command -v timeout &gt;/dev/null 2&gt;&amp;1 &amp;&amp; T='timeout 5'
+
+san() { printf '%s' "$1" | tr '|\n\r' '/  ' | cut -c1-120; }
+
+osval() { sed -n "s/^$1=//p" /etc/os-release 2&gt;/dev/null | head -n1 | tr -d '"'; }
+
+if command -v dpkg-query &gt;/dev/null 2&gt;&amp;1; then PM=dpkg
+elif command -v rpm &gt;/dev/null 2&gt;&amp;1; then PM=rpm
+elif command -v apk &gt;/dev/null 2&gt;&amp;1; then PM=apk
+else PM=none; fi
+
+# Sets PKG PKGV EV for a file ($1 = resolved path, $2 = path as found).
+lookup() {
+  PKG=''; PKGV=''; EV=na
+  case "$PM" in
+  dpkg)
+    for q in "$1" "$2"; do
+      [ -n "$PKG" ] &amp;&amp; break
+      PKG=$(dpkg -S "$q" 2&gt;/dev/null | sed -n '1s/[:,].*//p')
+    done
+    if [ -n "$PKG" ]; then
+      PKGV=$(dpkg-query -W -f='${Version}' "$PKG" 2&gt;/dev/null)
+      for f in /usr/share/doc/"$PKG"/changelog.Debian.gz /usr/share/doc/"$PKG"/changelog.gz /usr/share/doc/"$PKG"/changelog.Debian; do
+        [ -r "$f" ] || continue
+        case "$f" in
+          *.gz) m=$(gzip -dc "$f" 2&gt;/dev/null | grep -iE "$CVE_RE" | head -n1) ;;
+          *) m=$(grep -iE "$CVE_RE" "$f" 2&gt;/dev/null | head -n1) ;;
+        esac
+        if [ -n "$m" ]; then EV="yes:$(san "$m")"; break; fi
+        EV=no
+      done
+    fi ;;
+  rpm)
+    o=$(rpm -qf --qf '%{NAME}\n' "$1" 2&gt;/dev/null) || o=''
+    PKG=$(printf '%s\n' "$o" | head -n1)
+    if [ -n "$PKG" ]; then
+      PKGV=$(rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$PKG" 2&gt;/dev/null | head -n1)
+      cl=$(rpm -q --changelog "$PKG" 2&gt;/dev/null)
+      if [ -n "$cl" ]; then
+        m=$(printf '%s\n' "$cl" | grep -iE "$CVE_RE" | head -n1)
+        if [ -n "$m" ]; then EV="yes:$(san "$m")"; else EV=no; fi
+      fi
+    fi ;;
+  apk)
+    PKG=$(apk info -W "$1" 2&gt;/dev/null | sed -n 's/.* owned by //p' | head -n1)
+    if [ -n "$PKG" ]; then
+      l=$(apk info -v "$PKG" 2&gt;/dev/null | head -n1)
+      PKGV=${l#"$PKG"-}
+    fi ;;
+  esac
+}
+
+# Running web/PHP processes: one P| line per process, E| line for its exe.
+PROCS=$( { ps -eo pid=,comm= 2&gt;/dev/null || ps -o pid,comm 2&gt;/dev/null; } | while read -r pid comm; do
+  case "$pid" in *[!0-9]*|'') continue ;; esac
+  case "$comm" in
+    apache2|httpd|litespeed|lshttpd|frankenphp) ;;
+    php*|lsphp*) printf '%s\n' "$comm" | grep -Eq "$RE" || continue ;;
+    *) continue ;;
+  esac
+  exe=$(readlink "/proc/$pid/exe" 2&gt;/dev/null)
+  m=$(awk '$6 ~ /libphp/ &amp;&amp; lp=="" {lp=$6}
+           $NF=="(deleted)" &amp;&amp; $6 ~ /^\/(usr|opt|lib|lib32|lib64|bin|sbin|snap)\// {st=1; if (sp=="") sp=$6}
+           END {printf "%s|%d|%s\n", (lp==""?"-":lp), st+0, (sp==""?"-":sp)}' "/proc/$pid/maps" 2&gt;/dev/null)
+  ro=0; [ -n "$m" ] || { ro=1; m='-|0|-'; }
+  lp=${m%%|*}; r=${m#*|}; st=${r%%|*}; sp=${r#*|}
+  printf 'P|%s|%s|%s|%s|%s\n' "$comm" "$lp" "$st" "$sp" "$ro"
+  [ -n "$exe" ] &amp;&amp; printf 'E|%s\n' "${exe% (deleted)}"
+done )
+
+candidates() {
+  for d in $(printf '%s' "$PATH" | tr ':' ' ') /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin \
+      /usr/local/php*/bin /usr/local/php*/sbin /opt/remi/php*/root/usr/bin /opt/remi/php*/root/usr/sbin \
+      /opt/cpanel/ea-php*/root/usr/bin /opt/cpanel/ea-php*/root/usr/sbin /opt/alt/php*/usr/bin \
+      /opt/alt/php*/usr/sbin /usr/local/lsws/lsphp*/bin /opt/plesk/php/*/bin /opt/plesk/php/*/sbin; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      b=${f##*/}
+      case "$b" in php*|lsphp*|frankenphp*) ;; *) continue ;; esac
+      printf '%s\n' "$b" | grep -Eq "$RE" &amp;&amp; [ -f "$f" ] &amp;&amp; [ -x "$f" ] &amp;&amp; printf '%s\n' "$f"
+    done
+  done
+  printf '%s\n' "$PROCS" | sed -n 's/^E|//p'
+}
+
+printf '#P2S1\n'
+printf 'os|id=%s|ver=%s|name=%s\n' "$(osval ID)" "$(osval VERSION_ID)" "$(san "$(osval PRETTY_NAME)")"
+printf 'pm|name=%s\n' "$PM"
+if [ "$(id -u 2&gt;/dev/null)" = 0 ]; then printf 'user|root=1\n'; else printf 'user|root=0\n'; fi
+
+# Resolve symlinks (php -&gt; /etc/alternatives/php -&gt; php8.3) and de-duplicate.
+RESOLVED=$(candidates | while read -r f; do
+  [ -f "$f" ] &amp;&amp; [ -x "$f" ] || continue
+  rp=$(readlink -f "$f" 2&gt;/dev/null); [ -n "$rp" ] || rp=$f
+  printf '%s|%s\n' "$rp" "$f"
+done | sort -t'|' -u -k1,1)
+
+printf '%s\n' "$RESOLVED" | while read -r line; do
+  [ -n "$line" ] || continue
+  rp=${line%%|*}; f=${line#*|}
+  out=$($T "$rp" -v &lt;/dev/null 2&gt;&amp;1)
+  ver=$(printf '%s\n' "$out" | grep -oE 'PHP [0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -n1 | cut -c5-)
+  if [ -z "$ver" ]; then
+    out=$($T "$rp" version &lt;/dev/null 2&gt;&amp;1)
+    ver=$(printf '%s\n' "$out" | grep -oE 'PHP [0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -n1 | cut -c5-)
+  fi
+  built=$(printf '%s\n' "$out" | sed -n 's/.*built: \([A-Za-z][a-z][a-z]  *[0-9][0-9]*  *[0-9][0-9][0-9][0-9]\).*/\1/p' | head -n1 | tr -s ' ')
+  lookup "$rp" "$f"
+  printf 'bin|path=%s|ver=%s|built=%s|pkg=%s|pkgver=%s|ev=%s\n' "$(san "$rp")" "$ver" "$built" "$PKG" "$PKGV" "$EV"
+done
+
+# Apache mod_php: libphp*.so mapped by a running server, or present on disk.
+PROCLP=$(printf '%s\n' "$PROCS" | awk -F'|' '$1=="P" &amp;&amp; $3!="-" {print $3}' | sort -u)
+{ printf '%s\n' "$PROCLP"
+  for f in /usr/lib/apache2/modules/libphp*.so /usr/lib64/httpd/modules/libphp*.so \
+           /usr/lib/httpd/modules/libphp*.so /usr/local/apache2/modules/libphp*.so; do
+    [ -f "$f" ] &amp;&amp; printf '%s\n' "$f"
+  done; } | sed '/^$/d' | sort -u | while read -r m; do
+  [ -f "$m" ] || continue
+  rp=$(readlink -f "$m" 2&gt;/dev/null); [ -n "$rp" ] || rp=$m
+  ver=$(grep -aoE 'PHP/[0-9]+\.[0-9]+\.[0-9]+' "$rp" 2&gt;/dev/null | head -n1 | cut -c5-)
+  loaded=0; printf '%s\n' "$PROCLP" | grep -Fxq "$m" &amp;&amp; loaded=1
+  lookup "$rp" "$m"
+  printf 'mod|path=%s|ver=%s|pkg=%s|pkgver=%s|ev=%s|loaded=%s\n' "$(san "$rp")" "$ver" "$PKG" "$PKGV" "$EV" "$loaded"
+done
+
+printf '%s\n' "$PROCS" | grep '^P|' | sort | uniq -c | awk '{
+  n=$1; $1=""; sub(/^ /,""); split($0,a,"|")
+  printf "proc|comm=%s|libphp=%s|stale=%s|stalepath=%s|ro=%s|n=%d\n", a[2],a[3],a[4],a[5],a[6],n }'
+printf 'end|ok\n'
+P2S
+)"<!--COLLECTOR-END--></code></pre>
+
+<h2>2. Paste the output</h2>
+<p>
+  <textarea id="input" spellcheck="false" autocomplete="off" aria-label="Paste command output here"
+    placeholder="Paste the collector output here (starts with #P2S1)…"></textarea>
+</p>
+<div class="row">
+  <button id="check" class="primary" type="button">Check</button>
+  <button id="clear" type="button">Clear</button>
+  <span id="modes" class="meta"></span>
+</div>
+<details>
+  <summary>Rather paste <code>php -v</code>, <code>dpkg -l 'php*'</code>, <code>rpm -qa 'php*'</code> or <code>apk info -v</code>?</summary>
+  <p class="meta">These work too, with less certainty. <code>php -v</code> can only say &ldquo;version is at or above the fix&rdquo; or &ldquo;check the package&rdquo;, never &ldquo;patched&rdquo; for a low number on a package-installed PHP. Package lists get a verdict per package but cannot see changelogs, so a distro that backports ends up at NEEDS REVIEW; the collector above gives the precise answer.</p>
+</details>
+
+<section id="results" aria-live="polite" hidden>
+  <div id="overall"></div>
+  <div id="findings"></div>
+  <div id="notes"></div>
+</section>
+
+<h2>What the verdicts mean</h2>
+<p><strong>PATCHED</strong>: the version is at or above the upstream fix (8.5.12, 8.4.27, 8.3.36, 8.2.35) or the package changelog cites the CVE. <strong>VULNERABLE</strong>: below the fix with no way a backport could have reached it (self-compiled, or a distro that ships upstream numbers, or a branch with no fix). <strong>NEEDS REVIEW</strong>: a package-installed build with an old-looking number and no proof either way, or a process still running pre-update code (restart it).</p>
+<p class="meta">Affected: PHP 5.4 through 8.5.11, every web-serving SAPI (mod_php, PHP-FPM, php-cgi, FrankenPHP, LiteSpeed); PHP rates mod_php highest risk. PHP 8.1, 8.0 and 7.4 get no regular upstream release (minimal source backports only); 5.4&ndash;7.3 have no fix. A third issue, CVE-2026-115560, was undocumented and unfixed as of 25 October 2026; this page has no logic for it.</p>
+<p class="meta">This does not tell you whether you have already been compromised. Use CISA's SIGMA rule for that. <code>session.upload_progress.enabled=Off</code> is a stopgap, not a fix.</p>
+
+<footer>
+  MIT licensed &middot; source and README in the repository &middot; sources:
+  <a href="https://www.cisa.gov/news-events/alerts/2026/10/21/critical-vulnerabilities-php-require-immediate-patching" rel="noopener">CISA alert</a>,
+  GitHub advisories <a href="https://github.com/advisories/GHSA-w8hw-w9fx-j79w" rel="noopener">CVE-2026-109618</a> /
+  <a href="https://github.com/advisories/GHSA-6wmf-4rv5-p3rp" rel="noopener">CVE-2026-109619</a>,
+  <a href="https://cert.europa.eu/publications/security-advisories/2026-018/" rel="noopener">CERT-EU 2026-018</a>,
+  <a href="https://cyber.gc.ca/en/alerts-advisories/al26-026-critical-vulnerabilities-impacting-php-cve-2026-109618-cve-2026-109619" rel="noopener">Cyber Centre AL26-026</a>,
+  <a href="https://www.php.net/releases/" rel="noopener">PHP releases</a>
+</footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var PATCHED = "PATCHED", VULNERABLE = "VULNERABLE", REVIEW = "NEEDS REVIEW";
+  var FIXED_IN = { "8.5": 12, "8.4": 27, "8.3": 36, "8.2": 35 };
+  var BACKPORT_ONLY = { "8.1": 1, "8.0": 1, "7.4": 1 };
+  var EVIDENCE_RE = /109618|109619|php2shell/i;
+  var BACKPORTING_IDS = ["ubuntu", "rhel", "centos", "almalinux", "rocky", "cloudlinux", "ol", "amzn", "sles", "opensuse-leap"];
+  var UPSTREAM_IDS = ["debian", "alpine"];
+  var DEB_RUNTIME_RE = /^(?:php(?:\d+\.\d+)?-(?:cli|fpm|cgi|embed)|libapache2-mod-php(?:\d+\.\d+)?|libphp(?:\d+\.\d+)?-embed)$/;
+  var RPM_APK_RUNTIME_RE = /^(?:ea-|alt-)?php\d*(?:-php)?(?:-(?:cli|fpm|cgi|embedded|embed|litespeed|apache2))?$/;
+
+  function parseVersion(s) {
+    var m = /^\s*(?:\d+:)?(\d+)\.(\d+)\.(\d+)/.exec(s || "");
+    return m ? [+m[1], +m[2], +m[3]] : null;
+  }
+  function cmpBranch(v, maj, min) { return v[0] !== maj ? v[0] - maj : v[1] - min; }
+
+  function classifyFamily(name, version, osId) {
+    var v = (version || "").toLowerCase(), n = (name || "").toLowerCase();
+    if (v.indexOf("sury") >= 0 || v.indexOf("remi") >= 0 || n.indexOf("ea-php") === 0) return "upstream";
+    if (n.indexOf("alt-php") === 0) return "backporting";
+    if (v.indexOf("ubuntu") >= 0) return "backporting";
+    if (/[~+]deb\d+/.test(v)) return "upstream";
+    if (/\.(?:el|cl|amzn)\d/.test(v) || v.indexOf("cloudlinux") >= 0 || v.indexOf("alma") >= 0) return "backporting";
+    if (/-r\d+$/.test(v)) return "upstream";
+    if (BACKPORTING_IDS.indexOf(osId) >= 0) return "backporting";
+    if (UPSTREAM_IDS.indexOf(osId) >= 0) return "upstream";
+    return null;
+  }
+
+  // packaged: true | false | null (unknown, php -v only). evidence: true | false | null.
+  function judge(version, packaged, family, evidence) {
+    var v = parseVersion(version);
+    if (!v) return [REVIEW, "Could not read a x.y.z version number from the input."];
+    var bname = v[0] + "." + v[1], fixed = FIXED_IN[bname];
+    if (evidence === true) return [PATCHED, "The package changelog cites the CVE-2026-109618/109619 fix, so the old-looking version number " + bname + "." + v[2] + " is expected."];
+    if (cmpBranch(v, 8, 5) > 0) return [PATCHED, version + " is newer than every affected release (up to 8.5.11)."];
+    if (fixed !== undefined && v[2] >= fixed) return [PATCHED, version + " is at or above the upstream fix (" + bname + "." + fixed + ")."];
+    var want = fixed !== undefined ? "upstream fixed it in " + bname + "." + fixed
+      : BACKPORT_ONLY[bname] ? bname + " has no regular upstream fix release (source backports only)"
+      : bname + " has no fix at all";
+    if (packaged === null) return [REVIEW, "Version " + version + " is below the fix (" + want + "). `php -v` cannot tell whether a distro backported the patch into this number, so check the owning package's changelog."];
+    if (packaged === false) return [VULNERABLE, "Version " + version + " is below the fix (" + want + ") and the binary is not owned by a package, so there is no distro backport to hope for."];
+    if (cmpBranch(v, 7, 4) < 0) return [VULNERABLE, bname + " is end-of-life with no fix, and the package changelog does not cite the CVE."];
+    if (family === "upstream" && fixed !== undefined) return [VULNERABLE, "This distro ships upstream version numbers and " + version + " is below the fix (" + want + "), so it is not patched."];
+    var why = evidence === false ? "Its changelog does not mention the CVE" : "No changelog was available to check";
+    return [REVIEW, "Version " + version + " is below the fix (" + want + ") but distro packages keep the old number when they backport. " + why + "; most likely not patched yet. Update the package and re-check."];
+  }
+
+  /* ---------- parsers ---------- */
+  function parseCollector(text) {
+    var inv = { os: {}, pm: "none", isRoot: null, bins: [], mods: [], procs: [], complete: false };
+    var started = false;
+    text.split(/\r?\n/).forEach(function (raw) {
+      var line = raw.trim();
+      if (line.indexOf("#P2S1") === 0) { started = true; return; }
+      if (!started || !line) return;
+      var parts = line.split("|"), kind = parts[0], kv = {};
+      parts.slice(1).forEach(function (p) {
+        var i = p.indexOf("=");
+        if (i >= 0) kv[p.slice(0, i)] = p.slice(i + 1);
+      });
+      if (kind === "os") inv.os = kv;
+      else if (kind === "pm") inv.pm = kv.name || "none";
+      else if (kind === "user") inv.isRoot = kv.root === "1";
+      else if (kind === "bin") inv.bins.push(kv);
+      else if (kind === "mod") inv.mods.push(kv);
+      else if (kind === "proc") inv.procs.push(kv);
+      else if (kind === "end") inv.complete = true;
+    });
+    return inv;
+  }
+
+  function parsePhpV(text) {
+    var out = [], re = /^PHP (\d+\.\d+\.\d+\S*) \(([^)]*)\)(?: \(built: ([A-Za-z]{3} +\d+ \d{4})[^)]*\))?/gm, m;
+    while ((m = re.exec(text))) out.push({ version: m[1], sapi: m[2], built: m[3] || "" });
+    return out;
+  }
+
+  function parsePackages(text) {
+    var pkgs = [];
+    text.split(/\r?\n/).forEach(function (raw) {
+      var line = raw.replace(/\s+$/, ""), m;
+      m = /^([a-z ]{2})([A-Z ]?)\s+([^\s:]+)(?::\S+)?\s+(\S+)\s+\S+/.exec(line);
+      if (m && m[1].charAt(1) === "i" && !/^(Desired|\||\+\+\+)/.test(line)) {
+        pkgs.push({ name: m[3], version: m[4], pm: "dpkg" }); return;
+      }
+      var s = line.trim();
+      m = /^(.+)-(\d[^-\s]*)-r(\d+)$/.exec(s);
+      if (m) { pkgs.push({ name: m[1], version: m[2] + "-r" + m[3], pm: "apk" }); return; }
+      m = /^(.+)-(\d[^-\s]*)-([^-\s]+)\.([A-Za-z0-9_]+)$/.exec(s);
+      if (m && !/\s/.test(s)) pkgs.push({ name: m[1], version: m[2] + "-" + m[3], pm: "rpm" });
+    });
+    return pkgs;
+  }
+
+  function isRuntimePkg(name, pm) { return (pm === "dpkg" ? DEB_RUNTIME_RE : RPM_APK_RUNTIME_RE).test(name); }
+
+  /* ---------- fix commands ---------- */
+  function fpmUnit(pm, pkg, branch) {
+    if (pm === "dpkg") return "php" + branch + "-fpm";
+    var m = /^((?:ea-)?php\d+)-php/.exec(pkg || "");
+    return m ? m[1] + "-php-fpm" : "php-fpm";
+  }
+
+  function fixCommands(pm, kind, pkg, version, subject, packaged) {
+    var v = parseVersion(version), cmds = [];
+    var branch = v ? v[0] + "." + v[1] : "";
+    var base = (subject || "").split("/").pop();
+    var isFpm = (pkg || "").indexOf("fpm") >= 0 || base.indexOf("fpm") >= 0;
+    var isMod = (pkg || "").indexOf("mod") >= 0 || (subject || "").indexOf("libphp") >= 0 || pkg === "php" || pkg === "php-apache2";
+    if (packaged === null) {
+      return ["# Find the owning package first, then re-run this check with the package list:",
+        "dpkg -S \"$(readlink -f \"$(command -v php)\")\"    # Debian/Ubuntu",
+        "rpm -qf \"$(readlink -f \"$(command -v php)\")\"    # RHEL/Alma/CloudLinux"];
+    }
+    if (packaged === false || pm === "none") {
+      if (FIXED_IN[branch] !== undefined) cmds.push("# Rebuild/redeploy from php.net source " + branch + "." + FIXED_IN[branch] + " or newer (or pull a fixed official image).");
+      else cmds.push("# No upstream fix for " + (branch || "this branch") + ". Move to 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12 or newer, or use a vendor build whose changelog cites CVE-2026-109618.");
+      return cmds;
+    }
+    var restart = "", t = pkg || "";
+    if (pm === "dpkg") {
+      cmds.push("sudo apt-get update && sudo apt-get install --only-upgrade " + (t || "'php*' 'libapache2-mod-php*'"));
+      if (t) cmds.push("zgrep -iE '109618|109619' /usr/share/doc/" + t + "/changelog.Debian.gz");
+      restart = isMod ? "sudo systemctl restart apache2" : isFpm ? "sudo systemctl restart " + fpmUnit(pm, t, branch) : "";
+    } else if (pm === "rpm") {
+      cmds.push("sudo dnf upgrade --refresh " + (t || "'php*'") + "    # yum on EL7");
+      if (t) cmds.push("rpm -q --changelog " + t + " | grep -iE '109618|109619'");
+      restart = isMod ? "sudo systemctl restart httpd" : isFpm ? "sudo systemctl restart " + fpmUnit(pm, t, branch) : "";
+    } else if (pm === "apk") {
+      cmds.push("apk update && apk upgrade " + (t || "'php*'"));
+      restart = isFpm && t ? "rc-service " + t.replace(/-fpm$/, "").replace("php", "php-fpm") + " restart" : isMod ? "rc-service apache2 restart" : "";
+    }
+    if (restart) cmds.push(restart);
+    else if (kind === "binary" || kind === "package" || kind === "module") cmds.push("# After updating, restart whatever serves PHP (apache2/httpd, php-fpm, lsws, frankenphp).");
+    if (v && (BACKPORT_ONLY[branch] || cmpBranch(v, 7, 4) < 0)) {
+      cmds.push("# " + branch + " has no regular upstream fix. Unless the changelog check above shows the CVE, move to a supported branch (8.2.35+ / 8.3.36+ / 8.4.27+ / 8.5.12+).");
+    }
+    return cmds;
+  }
+
+  /* ---------- findings ---------- */
+  function evidenceOf(ev) {
+    ev = ev || "na";
+    return ev.indexOf("yes") === 0 ? true : ev === "no" ? false : null;
+  }
+
+  function findingsFromInventory(inv) {
+    var findings = [], notes = [], osId = inv.os.id, pm = inv.pm;
+    [["binary", inv.bins], ["module", inv.mods]].forEach(function (g) {
+      var kind = g[0];
+      g[1].forEach(function (b) {
+        var path = b.path || "?", pkg = b.pkg || "", pkgver = b.pkgver || "";
+        var ver = b.ver || (kind === "module" ? pkgver : "");
+        var packaged = !!pkg, family = packaged ? classifyFamily(pkg, pkgver, osId) : null;
+        var res = parseVersion(ver) ? judge(ver, packaged, family, evidenceOf(b.ev))
+          : [REVIEW, "Could not determine the PHP version of this file."];
+        var reason = res[1];
+        if (kind === "module" && b.loaded === "1") reason += " It is loaded by a running web server (mod_php, the highest-risk SAPI).";
+        var f = { kind: kind, subject: path, verdict: res[0], reason: reason, version: ver || null, fix: [],
+          extra: { built: b.built, pkg: b.pkg, pkgver: b.pkgver, loaded: b.loaded } };
+        if (f.verdict !== PATCHED) f.fix = fixCommands(pm, kind, pkg, ver, path, packaged);
+        findings.push(f);
+      });
+    });
+    var anyStale = false;
+    inv.procs.forEach(function (p) {
+      var n = p.n || "1";
+      if (p.stale === "1") {
+        anyStale = true;
+        findings.push({ kind: "process", subject: (p.comm || "?") + " (" + n + " process" + (n === "1" ? "" : "es") + ")",
+          verdict: REVIEW, version: null, extra: {},
+          reason: "Still maps a replaced file (" + (p.stalepath || "?") + "). The running code predates the on-disk update, so installing the patch is not enough until this is restarted.",
+          fix: ["# restart the matching service, e.g.:", "sudo systemctl restart apache2 php8.3-fpm    # httpd / php-fpm on RHEL-family"] });
+      }
+      if (p.ro === "1") notes.push("Could not read /proc maps for " + n + " process(es) of " + (p.comm || "?") + "; re-run as root to check for stale code.");
+    });
+    if (inv.procs.length && inv.isRoot === false && !anyStale) notes.push("Run as root to inspect processes owned by other users (web workers usually are).");
+    if (!inv.complete) notes.push("The collector block looks truncated (no end marker). Paste the whole output.");
+    return { findings: findings, notes: notes };
+  }
+
+  function findingsFromPackages(pkgs, osId) {
+    var out = [];
+    pkgs.forEach(function (p) {
+      if (!isRuntimePkg(p.name, p.pm) || !parseVersion(p.version)) return;
+      var res = judge(p.version, true, classifyFamily(p.name, p.version, osId), null);
+      var f = { kind: "package", subject: p.name + " " + p.version, verdict: res[0], reason: res[1], version: p.version,
+        fix: [], extra: { pkg: p.name, pkgver: p.version, pm: p.pm } };
+      if (f.verdict !== PATCHED) f.fix = fixCommands(p.pm, "package", p.name, p.version, p.name, true);
+      out.push(f);
+    });
+    return out;
+  }
+
+  function findingsFromPhpV(entries) {
+    return entries.map(function (e) {
+      var res = judge(e.version, null);
+      return { kind: "version", subject: "php -v: PHP " + e.version + " (" + e.sapi + ")", verdict: res[0], reason: res[1],
+        version: e.version, extra: { sapi: e.sapi, built: e.built },
+        fix: res[0] !== PATCHED ? fixCommands("none", "version", "", e.version, "php", null) : [] };
+    });
+  }
+
+  function overall(findings) {
+    if (!findings.length) return ["NO PHP FOUND", 3];
+    var vs = findings.map(function (f) { return f.verdict; });
+    if (vs.indexOf(VULNERABLE) >= 0) return [VULNERABLE, 1];
+    if (vs.indexOf(REVIEW) >= 0) return [REVIEW, 2];
+    return [PATCHED, 0];
+  }
+
+  function analyse(text) {
+    var modes = [], findings = [], notes = [];
+    if (text.indexOf("#P2S1") >= 0) {
+      modes.push("collector output");
+      var r = findingsFromInventory(parseCollector(text));
+      findings = r.findings; notes = r.notes;
+      if (!parseCollector(text).bins.length && !parseCollector(text).mods.length) notes.unshift("The collector found no PHP binary or mod_php module in the usual places.");
+    } else {
+      var v = parsePhpV(text), pk = parsePackages(text);
+      if (v.length) { modes.push("php -v"); findings = findings.concat(findingsFromPhpV(v)); }
+      if (pk.length) {
+        modes.push(pk[0].pm === "dpkg" ? "dpkg -l" : pk[0].pm === "rpm" ? "rpm -qa" : "apk info -v");
+        findings = findings.concat(findingsFromPackages(pk, null));
+        notes.push("Package lists cannot show changelogs, so distros that backport stay at NEEDS REVIEW. Run the collector for a precise answer.");
+      }
+    }
+    var o = overall(findings);
+    return { modes: modes, findings: findings, notes: notes, overall: o[0], exitCode: o[1] };
+  }
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { judge: judge, parseVersion: parseVersion, classifyFamily: classifyFamily, analyse: analyse,
+      parsePackages: parsePackages, parsePhpV: parsePhpV, parseCollector: parseCollector, overall: overall };
+  }
+  if (typeof document === "undefined") return;
+
+  /* ---------- UI (textContent only; pasted text is never rendered as HTML) ---------- */
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function copyText(text, done) {
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(ta); done(ok);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
+    } else fallback();
+  }
+  function cls(verdict) { return verdict === REVIEW ? "REVIEW" : verdict; }
+
+  function render(res) {
+    var box = document.getElementById("findings"), nbox = document.getElementById("notes"), ov = document.getElementById("overall");
+    box.textContent = ""; nbox.textContent = "";
+    document.getElementById("results").hidden = false;
+    document.getElementById("modes").textContent = res.modes.length ? "Detected: " + res.modes.join(", ") : "";
+    var msg = {
+      "PATCHED": "Everything found is patched.",
+      "VULNERABLE": "At least one PHP on this server is vulnerable.",
+      "NEEDS REVIEW": "Nothing is proven vulnerable, but something needs a manual look (see below).",
+      "NO PHP FOUND": "No PHP found in that text. Paste output from one of the commands above."
+    }[res.overall];
+    ov.className = res.overall === "NO PHP FOUND" ? "NONE" : cls(res.overall);
+    ov.textContent = res.overall + ": " + msg;
+    res.findings.forEach(function (f) {
+      var card = el("div", "card " + cls(f.verdict));
+      var h = el("h3"); h.appendChild(el("span", "badge", f.verdict)); h.appendChild(document.createTextNode(f.subject));
+      card.appendChild(h);
+      var bits = [];
+      if (f.version && (f.kind === "binary" || f.kind === "module")) bits.push("PHP " + f.version);
+      if (f.extra && f.extra.built) bits.push("built " + f.extra.built);
+      if (f.extra && f.extra.pkg) bits.push("package " + f.extra.pkg + (f.extra.pkgver && f.kind !== "package" ? " " + f.extra.pkgver : ""));
+      else if (f.kind === "binary" || f.kind === "module") bits.push("not owned by a package");
+      if (bits.length) card.appendChild(el("div", "meta", bits.join(" · ")));
+      card.appendChild(el("p", "", f.reason));
+      if (f.fix && f.fix.length) {
+        var fx = el("div", "fix"), head = el("div", "fixhead"), btn = el("button", "", "Copy");
+        head.appendChild(el("span", "", "Fix"));
+        var text = f.fix.join("\n");
+        btn.type = "button";
+        btn.addEventListener("click", function () { copyText(text, function (ok) { btn.textContent = ok ? "Copied" : "Copy failed"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); }); });
+        head.appendChild(btn); fx.appendChild(head);
+        var pre = el("pre"); pre.appendChild(el("code", "", text)); fx.appendChild(pre);
+        card.appendChild(fx);
+      }
+      box.appendChild(card);
+    });
+    res.notes.forEach(function (n) { nbox.appendChild(el("div", "note", n)); });
+    ov.scrollIntoView({ block: "nearest" });
+  }
+
+  var input = document.getElementById("input");
+  document.getElementById("check").addEventListener("click", function () { render(analyse(input.value)); });
+  document.getElementById("clear").addEventListener("click", function () {
+    input.value = ""; document.getElementById("results").hidden = true; document.getElementById("modes").textContent = "";
+  });
+  input.addEventListener("paste", function () { setTimeout(function () { if (input.value.trim()) render(analyse(input.value)); }, 0); });
+  document.getElementById("copy-collector").addEventListener("click", function () {
+    var msg = document.getElementById("copy-collector-msg");
+    copyText(document.getElementById("collector").textContent, function (ok) {
+      msg.textContent = ok ? "Copied. Paste it into a shell on the server." : "Copy failed: select the text below and copy it manually.";
+    });
+  });
+})();
+</script>
+</body>
+</html>
