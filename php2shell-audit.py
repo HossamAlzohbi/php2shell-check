@@ -32,6 +32,10 @@ FIXED_IN = {(8, 5): 12, (8, 4): 27, (8, 3): 36, (8, 2): 35}
 BACKPORT_ONLY = {(8, 1), (8, 0), (7, 4)}
 
 EVIDENCE_RE = re.compile(r"109618|109619|php2shell", re.I)
+# Scan only the newest slice of a changelog. Entries are newest-first, so a CVE
+# citation (if present) sits at the top; this caps memory/time on a package with
+# a pathologically long history without affecting any real verdict.
+MAX_CHANGELOG_BYTES = 200_000
 # Strict allowlist: php-config, phpize, phpenmod, phpquery, phpdbg never match.
 BIN_RE = re.compile(r"^(?:php|php-fpm|php-cgi|lsphp|frankenphp)(?:\d+(?:\.\d+)*)?$")
 WEB_COMMS = {"apache2", "httpd", "litespeed", "lshttpd", "frankenphp"}
@@ -506,6 +510,37 @@ def scan_processes() -> Tuple[List[Dict[str, str]], List[str], List[str]]:
     return procs, exes, libs
 
 
+def changelog_hit(text: str) -> Optional[str]:
+    """First line within the scan cap that cites the CVE, stripped, else None.
+
+    Changelogs are newest-first, so a backport citation is in the top entry;
+    only the first MAX_CHANGELOG_BYTES are scanned (see the constant).
+    """
+    for ln in text[:MAX_CHANGELOG_BYTES].splitlines():
+        if EVIDENCE_RE.search(ln):
+            return ln.strip()
+    return None
+
+
+def parse_apk_owner(who_owns: str) -> Tuple[str, str]:
+    """Parse `apk info -W <path>` output into (name, version).
+
+    The real output is one line of the form
+        /usr/bin/php83 is owned by php83-8.3.36-r0
+    so the owner token is a full name-version-release, not a bare package
+    name. Split it into ("php83", "8.3.36-r0"). Return (owner, "") if it does
+    not match that shape, or ("", "") when the path is owned by nothing.
+    """
+    m = re.search(r" owned by (\S+)", who_owns)
+    if not m:
+        return "", ""
+    owner = m.group(1)
+    mm = re.match(r"^(.+)-(\d[^-\s]*-r\d+)$", owner)
+    if mm:
+        return mm.group(1), mm.group(2)
+    return owner, ""
+
+
 def lookup_pkg(pm: str, resolved: str, original: str) -> Tuple[str, str, str]:
     """-> (pkg, pkgver, evidence) where evidence is yes:<line> | no | na."""
     pkg = pkgver = ""
@@ -526,7 +561,8 @@ def lookup_pkg(pm: str, resolved: str, original: str) -> Tuple[str, str, str]:
                 try:
                     opener = gzip.open if path.endswith(".gz") else open
                     with opener(path, "rt", encoding="utf-8", errors="replace") as fh:
-                        hit = next((ln.strip() for ln in fh if EVIDENCE_RE.search(ln)), None)
+                        chunk = fh.read(MAX_CHANGELOG_BYTES)
+                    hit = changelog_hit(chunk)
                 except (OSError, EOFError):
                     continue
                 if hit:
@@ -541,16 +577,11 @@ def lookup_pkg(pm: str, resolved: str, original: str) -> Tuple[str, str, str]:
             pkgver = out.splitlines()[0].strip() if out.strip() else ""
             _, cl = _run(["rpm", "-q", "--changelog", pkg], timeout=30)
             if cl.strip():
-                hit = next((ln.strip() for ln in cl.splitlines() if EVIDENCE_RE.search(ln)), None)
+                hit = changelog_hit(cl)
                 ev = ("yes:" + hit[:120].replace("|", "/")) if hit else "no"
     elif pm == "apk":
         _, out = _run(["apk", "info", "-W", resolved])
-        m = re.search(r" owned by (\S+)", out)
-        pkg = m.group(1) if m else ""
-        if pkg:
-            _, out = _run(["apk", "info", "-v", pkg])
-            line = out.strip().splitlines()[0] if out.strip() else ""
-            pkgver = line[len(pkg) + 1:] if line.startswith(pkg + "-") else ""
+        pkg, pkgver = parse_apk_owner(out)
     return pkg, pkgver.strip(), ev
 
 

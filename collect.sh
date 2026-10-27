@@ -28,8 +28,8 @@ lookup() {
       for f in /usr/share/doc/"$PKG"/changelog.Debian.gz /usr/share/doc/"$PKG"/changelog.gz /usr/share/doc/"$PKG"/changelog.Debian; do
         [ -r "$f" ] || continue
         case "$f" in
-          *.gz) m=$(gzip -dc "$f" 2>/dev/null | grep -iE "$CVE_RE" | head -n1) ;;
-          *) m=$(grep -iE "$CVE_RE" "$f" 2>/dev/null | head -n1) ;;
+          *.gz) m=$(gzip -dc "$f" 2>/dev/null | head -c 200000 | grep -iE "$CVE_RE" | head -n1) ;;
+          *) m=$(head -c 200000 "$f" 2>/dev/null | grep -iE "$CVE_RE" | head -n1) ;;
         esac
         if [ -n "$m" ]; then EV="yes:$(san "$m")"; break; fi
         EV=no
@@ -40,17 +40,19 @@ lookup() {
     PKG=$(printf '%s\n' "$o" | head -n1)
     if [ -n "$PKG" ]; then
       PKGV=$(rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$PKG" 2>/dev/null | head -n1)
-      cl=$(rpm -q --changelog "$PKG" 2>/dev/null)
+      cl=$(rpm -q --changelog "$PKG" 2>/dev/null | head -c 200000)
       if [ -n "$cl" ]; then
         m=$(printf '%s\n' "$cl" | grep -iE "$CVE_RE" | head -n1)
         if [ -n "$m" ]; then EV="yes:$(san "$m")"; else EV=no; fi
       fi
     fi ;;
   apk)
-    PKG=$(apk info -W "$1" 2>/dev/null | sed -n 's/.* owned by //p' | head -n1)
-    if [ -n "$PKG" ]; then
-      l=$(apk info -v "$PKG" 2>/dev/null | head -n1)
-      PKGV=${l#"$PKG"-}
+    # `apk info -W` names the owner as a full name-version-release, e.g.
+    # "/usr/bin/php83 is owned by php83-8.3.36-r0" -> PKG=php83, PKGV=8.3.36-r0.
+    owner=$(apk info -W "$1" 2>/dev/null | sed -n 's/.* owned by //p' | head -n1)
+    if [ -n "$owner" ]; then
+      PKGV=$(printf '%s\n' "$owner" | sed -n 's/^.*-\([0-9][^-]*-r[0-9]*\)$/\1/p')
+      if [ -n "$PKGV" ]; then PKG=${owner%-"$PKGV"}; else PKG=$owner; fi
     fi ;;
   esac
 }

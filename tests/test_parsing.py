@@ -106,6 +106,31 @@ def test_apk(audit):
     assert all(f.verdict == "VULNERABLE" for f in fs)
 
 
+def test_apk_owner(audit):
+    # Real `apk info -W <path>` output captured from alpine:3.21 with apk-installed php83.
+    assert audit.parse_apk_owner("/usr/bin/php83 is owned by php83-8.3.36-r0") == ("php83", "8.3.36-r0")
+    assert audit.parse_apk_owner("/usr/sbin/php-fpm83 is owned by php83-fpm-8.3.14-r0") == ("php83-fpm", "8.3.14-r0")
+    # Unowned (self-compiled) binary: apk prints nothing matchable.
+    assert audit.parse_apk_owner("") == ("", "")
+
+
+def test_changelog_hit(audit):
+    # Real-shape rpm changelog: the CVE citation is in the newest (top) entry.
+    cl = (
+        "* Mon Oct 19 2026 Remi Collet <rcollet@redhat.com> - 8.0.30-8.1\n"
+        "- Avoid state corruption via bailout\n"
+        "  CVE-2026-109618, CVE-2026-109619\n"
+        "* Tue Jan 01 2019 Someone - 8.0.0-1\n"
+        "- initial build\n"
+    )
+    assert audit.changelog_hit(cl) == "CVE-2026-109618, CVE-2026-109619"
+    assert audit.changelog_hit("- nothing relevant here\n") is None
+    # A citation sitting past the scan cap is deliberately not reached.
+    buried = ("- filler\n" * 40000) + "  CVE-2026-109618\n"
+    assert len(buried) > audit.MAX_CHANGELOG_BYTES
+    assert audit.changelog_hit(buried) is None
+
+
 def test_php_v(audit):
     (e,) = audit.parse_php_v(PHP_V)
     assert e == {"version": "8.3.6", "sapi": "cli", "built": "Jun 12 2026"}

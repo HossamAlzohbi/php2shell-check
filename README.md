@@ -99,6 +99,9 @@ PHP tree, and (if `node` is installed) that the web page agrees with the Python 
 
 ## How a verdict is reached
 
+For the full pipeline and the reasoning behind each design choice, see
+[HOW-IT-WORKS.md](HOW-IT-WORKS.md). In short:
+
 1. Package changelog cites the CVE -> **PATCHED** (this is what proves a backport).
 2. Version at or above the upstream fix for its branch (or newer than 8.5) -> **PATCHED**.
 3. Below the fix and not owned by any package (self-compiled) -> **VULNERABLE**.
@@ -111,13 +114,36 @@ PHP tree, and (if `node` is installed) that the web page agrees with the Python 
 
 ## Verification status
 
-Exercised against real tooling: `dpkg` / `dpkg-query` / `/usr/share/doc/*/changelog.Debian.gz` (Ubuntu host),
-the collector under `dash` and `bash`, and the Python parsers against dpkg, rpm and apk output samples.
+Exercised against real tooling:
 
-**Not yet exercised against a real system: the `rpm` and `apk` code paths** (`rpm -qf`, `rpm -q --changelog`,
-`apk info -W`, `apk info -v` in both `collect.sh` and `php2shell-audit.py`), and the `php:*` Docker images.
-They follow the tools' documented output and are covered only by fixtures written from that documentation.
-Treat RPM/Alpine results as unproven until someone runs the collector on AlmaLinux/Alpine and confirms.
+* `dpkg` / `dpkg-query` / `/usr/share/doc/*/changelog.Debian.gz` on an Ubuntu host, the collector under `dash`
+  and `bash`, and the Python parsers against dpkg, rpm and apk output samples.
+* **Official Docker images**, with the CLI (`php2shell-audit.py`) run inside each:
+  * `php:8.4.26-apache` -> **VULNERABLE** (exit 1): below the 8.4.27 fix, binary not package-owned.
+  * `php:8.4.27-apache` -> **PATCHED** (exit 0): at the fix.
+  * `php:8.3.36-alpine` -> **PATCHED**: the official image compiles PHP into `/usr/local`, so this confirms the
+    unpackaged-but-at-fix path, *not* apk ownership.
+  * `almalinux:9` with `dnf install php` -> **PATCHED**: ships `php-cli-8.0.30-8.el9_8.1`, an old-looking number
+    whose `rpm -q --changelog` genuinely cites `CVE-2026-109618, CVE-2026-109619`. This exercises `rpm -qf`
+    (returns `name-version-release.arch`) and the changelog backport detection against a real RPM system.
+  * `alpine:3.21` with `apk add php83` -> **PATCHED**: exercises `apk info -W`, which returns
+    `/usr/bin/php83 is owned by php83-8.3.36-r0` (a full name-version-release, not a bare name). This surfaced
+    and fixed a bug in the apk owner parse (see `parse_apk_owner` and `test_apk_owner`).
+
+  The `php:*-apache` base images ship no `python3`; the CLI was run after an in-container `apt-get install python3`.
+
+**Still not exercised against a real system:**
+
+* **BusyBox `ash`** — `collect.sh` has run under `dash` and `bash`, but not under the BusyBox shell that Alpine
+  uses by default. The Docker runs above drove the Python CLI, not `collect.sh`.
+* **mod_php detection against a real running Apache** — the `(deleted)`-mapping / stale-process logic and the
+  `MOD_GLOBS` module scan have only been tested against synthetic `/proc` and file trees, not a live `apache2`/`httpd`
+  serving mod_php.
+* **Python 3.8** — the CLI targets 3.8+ but has only been run on newer interpreters.
+* **The web page UI in a browser** — `docs/index.html` is covered by the JS/Python parity test, but its actual
+  rendering, paste handling and copy buttons have not been clicked through in a browser.
+* The `rpm -q --changelog` *absence* case (a patched RPM distro that words the changelog differently) and
+  cPanel/CloudLinux/Plesk custom-prefix layouts remain fixture-only.
 
 ## Scope and limitations
 
